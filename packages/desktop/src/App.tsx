@@ -1,4 +1,4 @@
-·import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Entry } from '@diary/shared/types';
 
 declare global {
