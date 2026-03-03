@@ -1,373 +1,94 @@
-好主意!我来生成一份详细的技术规格文档,你可以直接发给 Claude Code 让它执行。让我直接把内容输出给你,你复制后发给 Claude Code:
+# 日记 APP 开发计划
+
+## 项目概述
+跨平台日记应用：
+- **桌面版**：Electron (Windows) + React + TypeScript
+- **移动版**：React Native (Android)
+- **存储**：纯本地 JSON 文件（desktop）/ AsyncStorage（mobile）
+- **核心功能**：日历视图 + AI 辅助写作（规划中）
 
 ---
 
-# 日记 APP 开发规格文档 - 给 Claude Code 的指令
+## 已完成
 
-## 项目概述
-创建一个跨平台日记应用:
-- **桌面版**: Electron (Windows + Linux)  
-- **移动版**: React Native (Android)
-- **存储**: 纯本地 SQLite,无云同步
-- **核心功能**: 语音转文字 + AI 辅助写作
+### 第一阶段：桌面版基础功能 ✅
 
-## 第一阶段任务 (请 Claude Code 执行)
+- Monorepo 结构（pnpm workspaces）
+- `@diary/shared`：共享类型（Entry、Tag、Settings）
+- Electron 主进程：JSON 文件存储（`diary.json`），IPC handlers：
+  - `db:createEntry`（支持指定 createdAt）
+  - `db:listEntries`（过滤软删除）
+  - `db:updateEntry`
+  - `db:deleteEntry`（软删除）
+- 渲染进程 UI（App.tsx）：
+  - **顶部导航栏**：日历 / 列表切换 + 设置按钮
+  - **日历视图**（CalendarView）：
+    - 月份导航（input[type=month] + 前后箭头）
+    - 7 列日期格，今日高亮（绿色），有日记的日期显示绿点
+    - 周日/周六分色（红/蓝）
+    - 点击日期进入 DayView
+    - 本月日记列表（RecentEntries）：可展开/折叠，可配置显示数量
+  - **日视图**（DayView）：
+    - 新建日记（textarea + Ctrl+Enter 保存）
+    - 已有日记列表：显示时间、内容
+    - 编辑（inline，Ctrl+Enter / Esc）
+    - 删除（ConfirmDialog 二次确认，支持 Enter/Esc 键盘操作）
+  - **全部日记视图**（AllEntriesView）：
+    - 按年/月筛选，快速跳到当前月
+    - 显示总篇数
+    - inline 编辑 + 删除确认
+  - **设置面板**（SettingsPanel）：右侧滑出，显示版本号，Esc 关闭
+  - 版本号通过 `VITE_APP_VERSION` 注入
 
-### 1. 初始化 Monorepo 项目
+### 第二阶段：移动端脚手架 ✅
 
-```bash
-# 创建项目结构
-mkdir diary-app && cd diary-app
-pnpm init
-mkdir -p packages/shared/src/{db,ai,types,utils}
-mkdir -p packages/desktop/{electron,src/components,src/store,src/styles}
-```
+- React Native 0.84.1 + pnpm monorepo 兼容配置
+- Metro bundler 配置（watchFolders + extraNodeModules）
+- `@diary/shared/types` 子路径导入（避免 Node.js 依赖）
+- 页面：`CalendarScreen`、`DayScreen`
+- 导航：`RootNavigator`（React Navigation）
+- 存储：`entryStorage.ts`（AsyncStorage CRUD）
 
-### 2. 配置文件
+---
 
-**pnpm-workspace.yaml**
-```yaml
-packages:
-  - 'packages/*'
-```
+## 待开发
 
-**package.json (root)**
-```json
-{
-  "name": "diary-app",
-  "private": true,
-  "scripts": {
-    "dev:desktop": "pnpm --filter @diary/desktop dev"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.3",
-    "turbo": "^1.11.0"
-  }
-}
-```
+### 第三阶段：移动端功能完善
 
-### 3. Shared Package 代码
+**前提条件**：Android Studio + JDK 17 + ANDROID_HOME 环境变量
 
-**packages/shared/package.json**
-```json
-{
-  "name": "@diary/shared",
-  "version": "1.0.0",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts"
-}
-```
+- [ ] CalendarScreen 实现日历视图（同 desktop）
+- [ ] DayScreen 实现日记 CRUD
+- [ ] 与 desktop 保持 UI 风格一致
 
-**packages/shared/src/types/index.ts**
-```typescript
-export interface Entry {
-  id: string;
-  content: string;
-  createdAt: number;
-  updatedAt: number;
-  voiceTranscription?: string;
-  aiEnhanced?: string;
-  mood?: string;
-  deletedAt?: number;
-}
+### 第四阶段：AI 辅助写作
 
-export interface Tag {
-  id: string;
-  name: string;
-  color?: string;
-  createdAt: number;
-}
+- [ ] 集成 Ollama（本地模型 qwen2.5:7b）
+  - `OllamaAI.enhanceDiary(content)` — 润色文字
+  - `OllamaAI.analyzeMood(content)` — 情绪分析
+- [ ] 在 DayView 中添加「AI 润色」按钮
+- [ ] 在设置面板中添加 Ollama URL 配置项
+- [ ] Entry 类型中的 `aiEnhanced`、`mood` 字段实际存储
 
-export interface Settings {
-  aiModel: 'ollama' | 'claude';
-  ollamaUrl: string;
-  claudeApiKey?: string;
-  voiceLanguage: 'zh-CN' | 'en-US';
-}
-```
+### 第五阶段：语音转文字
 
-**packages/shared/src/db/schema.ts**
-```typescript
-export const SCHEMA = `
-CREATE TABLE IF NOT EXISTS entries (
-  id TEXT PRIMARY KEY,
-  content TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  voice_transcription TEXT,
-  ai_enhanced TEXT,
-  mood TEXT,
-  deleted_at INTEGER
-);
+- [ ] 调研方案：Web Speech API（Electron）vs whisper.cpp
+- [ ] 录音按钮集成到 DayView 编辑区
+- [ ] 转写结果填入 textarea
 
-CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at DESC);
+### 第六阶段：打包分发
 
-CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY,
-  name TEXT UNIQUE NOT NULL,
-  color TEXT,
-  created_at INTEGER NOT NULL
-);
+- [ ] electron-builder 配置 Windows NSIS 安装包
+- [ ] 版本号管理（`VITE_APP_VERSION`）
+- [ ] React Native APK 构建配置
 
-CREATE TABLE IF NOT EXISTS entry_tags (
-  entry_id TEXT NOT NULL,
-  tag_id TEXT NOT NULL,
-  PRIMARY KEY (entry_id, tag_id)
-);
+---
 
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`;
-```
+## 技术决策记录
 
-**packages/shared/src/ai/ollama.ts**
-```typescript
-export class OllamaAI {
-  private baseUrl: string;
-
-  constructor(baseUrl = 'http://localhost:11434') {
-    this.baseUrl = baseUrl;
-  }
-
-  async enhanceDiary(content: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'qwen2.5:7b',
-        prompt: `请将以下口语化的日记内容润色,使其更加流畅和有文采,保持原意:\n\n${content}`,
-        stream: false,
-      }),
-    });
-    const data = await response.json();
-    return data.response;
-  }
-
-  async analyzeMood(content: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'qwen2.5:7b',
-        prompt: `分析情绪,只返回一个中文词(开心/难过/平静/焦虑):\n\n${content}`,
-        stream: false,
-      }),
-    });
-    const data = await response.json();
-    return data.response.trim();
-  }
-}
-```
-
-### 4. Desktop Package
-
-**packages/desktop/package.json**
-```json
-{
-  "name": "@diary/desktop",
-  "version": "1.0.0",
-  "main": "dist-electron/main.js",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build && electron-builder"
-  },
-  "dependencies": {
-    "@diary/shared": "workspace:*",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "better-sqlite3": "^9.2.2",
-    "zustand": "^4.4.7"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.45",
-    "@types/better-sqlite3": "^7.6.8",
-    "@vitejs/plugin-react": "^4.2.1",
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
-    "typescript": "^5.3.3",
-    "vite": "^5.0.8",
-    "vite-plugin-electron": "^0.28.0"
-  }
-}
-```
-
-**packages/desktop/electron/main.ts**
-```typescript
-import { app, BrowserWindow, ipcMain } from 'electron';
-import path from 'path';
-import Database from 'better-sqlite3';
-import { SCHEMA } from '@diary/shared/db/schema';
-
-let mainWindow: BrowserWindow | null = null;
-let db: Database.Database;
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
-}
-
-function initDatabase() {
-  const dbPath = path.join(app.getPath('userData'), 'diary.db');
-  db = new Database(dbPath);
-  db.exec(SCHEMA);
-}
-
-app.whenReady().then(() => {
-  initDatabase();
-  createWindow();
-});
-
-// IPC handlers
-ipcMain.handle('db:createEntry', async (_, content: string) => {
-  const id = Date.now().toString();
-  const now = Date.now();
-  db.prepare(
-    'INSERT INTO entries (id, content, created_at, updated_at) VALUES (?, ?, ?, ?)'
-  ).run(id, content, now, now);
-  return { id, content, createdAt: now, updatedAt: now };
-});
-
-ipcMain.handle('db:listEntries', async () => {
-  return db.prepare(
-    'SELECT * FROM entries WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 50'
-  ).all();
-});
-
-ipcMain.handle('db:updateEntry', async (_, id: string, content: string) => {
-  db.prepare(
-    'UPDATE entries SET content = ?, updated_at = ? WHERE id = ?'
-  ).run(content, Date.now(), id);
-});
-```
-
-**packages/desktop/electron/preload.ts**
-```typescript
-import { contextBridge, ipcRenderer } from 'electron';
-
-contextBridge.exposeInMainWorld('electronAPI', {
-  createEntry: (content: string) => ipcRenderer.invoke('db:createEntry', content),
-  listEntries: () => ipcRenderer.invoke('db:listEntries'),
-  updateEntry: (id: string, content: string) => 
-    ipcRenderer.invoke('db:updateEntry', id, content),
-});
-```
-
-**packages/desktop/src/App.tsx**
-```typescript
-import { useState, useEffect } from 'react';
-import { Entry } from '@diary/shared/types';
-
-declare global {
-  interface Window {
-    electronAPI: {
-      createEntry: (content: string) => Promise<Entry>;
-      listEntries: () => Promise<Entry[]>;
-      updateEntry: (id: string, content: string) => Promise<void>;
-    };
-  }
-}
-
-function App() {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [content, setContent] = useState('');
-
-  useEffect(() => {
-    loadEntries();
-  }, []);
-
-  async function loadEntries() {
-    const data = await window.electronAPI.listEntries();
-    setEntries(data);
-  }
-
-  async function handleSave() {
-    await window.electronAPI.createEntry(content);
-    setContent('');
-    loadEntries();
-  }
-
-  return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-      <h1>📔 日记 APP</h1>
-      
-      <div style={{ marginBottom: '20px' }}>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="写下今天的故事..."
-          style={{ width: '100%', height: '200px', padding: '10px', fontSize: '16px' }}
-        />
-        <button onClick={handleSave} style={{ marginTop: '10px', padding: '10px 20px' }}>
-          保存日记
-        </button>
-      </div>
-
-      <h2>最近日记</h2>
-      {entries.map((entry) => (
-        <div key={entry.id} style={{ 
-          border: '1px solid #ddd', 
-          padding: '15px', 
-          marginBottom: '10px',
-          borderRadius: '5px' 
-        }}>
-          <small>{new Date(entry.createdAt).toLocaleString('zh-CN')}</small>
-          <p>{entry.content}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export default App;
-```
-
-**packages/desktop/vite.config.ts**
-```typescript
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import electron from 'vite-plugin-electron';
-
-export default defineConfig({
-  plugins: [
-    react(),
-    electron({
-      entry: 'electron/main.ts',
-    }),
-  ],
-});
-```
-
-## 使用说明
-
-复制以上内容,然后在 Claude Code 中执行:
-
-```
-请按照上述规格创建 diary-app 项目,包括:
-1. 创建完整的文件结构
-2. 安装所有依赖 (pnpm install)
-3. 运行开发服务器 (pnpm dev:desktop)
-4. 确保 Electron 窗口能正常打开并创建/显示日记
-```
-
-这是第一阶段的基础版本,后续可以加入:
-- AI 润色功能 (Ollama)
-- 语音转文字 (whisper.cpp 或 Web Speech API)
-- 更好看的 UI
-- 移动端 React Native 版本
-
-需要我详细解释任何部分吗?
+| 问题 | 决策 | 原因 |
+|------|------|------|
+| SQLite 原生绑定 | 改用 JSON 文件 | 无 MSVC 构建工具，无法编译 better-sqlite3 |
+| sql.js WASM | 已放弃 | Electron + Vite 路径配置复杂 |
+| Mobile 数据库 | AsyncStorage | 与 desktop JSON 逻辑对称，无原生依赖 |
+| Monorepo 兼容 | metro.config.js watchFolders | pnpm 符号链接需要特殊处理 |
