@@ -6,7 +6,8 @@
     "dev:android": "pnpm --filter @diary/mobile android",
     "metro": "pnpm --filter @diary/mobile start",
     "build:desktop": "pnpm --filter @diary/desktop build",
-    "build:android": "pnpm --filter @diary/mobile build:android"
+    "build:android": "pnpm --filter @diary/mobile build:android",
+    "install:android": "pnpm --filter @diary/mobile install:android"
   },
   "devDependencies": {
     "typescript": "^5.3.3"
