@@ -1,4 +1,4 @@
-# Book Me - 个人日记应用
+# Book Me - 个人日记应用 | [English Version](https://github.com/yc09od/ai-learning-calendar/blob/master/readme.en.md)
 
 一款支持表情、标签、日历视图的个人日记应用，分桌面端和手机端两个版本。
 
