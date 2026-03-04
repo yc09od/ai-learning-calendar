@@ -54,7 +54,7 @@ app.on('window-all-closed', () => {
 });
 
 // IPC handlers
-ipcMain.handle('db:createEntry', async (_, content: string, createdAt?: number): Promise<Entry> => {
+ipcMain.handle('db:createEntry', async (_, content: string, createdAt?: number, mood?: string): Promise<Entry> => {
   const data = readData();
   const now = Date.now();
   const entry: Entry = {
@@ -62,6 +62,7 @@ ipcMain.handle('db:createEntry', async (_, content: string, createdAt?: number):
     content,
     createdAt: createdAt ?? now,
     updatedAt: now,
+    mood: mood || undefined,
   };
   data.entries.unshift(entry);
   writeData(data);
@@ -78,6 +79,16 @@ ipcMain.handle('db:updateEntry', async (_, id: string, content: string): Promise
   const entry = data.entries.find((e) => e.id === id);
   if (entry) {
     entry.content = content;
+    entry.updatedAt = Date.now();
+    writeData(data);
+  }
+});
+
+ipcMain.handle('db:updateMood', async (_, id: string, mood: string | null): Promise<void> => {
+  const data = readData();
+  const entry = data.entries.find((e) => e.id === id);
+  if (entry) {
+    entry.mood = mood ?? undefined;
     entry.updatedAt = Date.now();
     writeData(data);
   }

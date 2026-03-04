@@ -17,7 +17,7 @@ async function writeData(entries: Entry[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
-export async function createEntry(content: string, createdAt?: number): Promise<Entry> {
+export async function createEntry(content: string, createdAt?: number, mood?: string): Promise<Entry> {
   const entries = await readData();
   const now = Date.now();
   const entry: Entry = {
@@ -25,6 +25,7 @@ export async function createEntry(content: string, createdAt?: number): Promise<
     content,
     createdAt: createdAt ?? now,
     updatedAt: now,
+    mood: mood || undefined,
   };
   entries.unshift(entry);
   await writeData(entries);
@@ -41,6 +42,16 @@ export async function updateEntry(id: string, content: string): Promise<void> {
   const entry = entries.find((e) => e.id === id);
   if (entry) {
     entry.content = content;
+    entry.updatedAt = Date.now();
+    await writeData(entries);
+  }
+}
+
+export async function updateMood(id: string, mood: string | null): Promise<void> {
+  const entries = await readData();
+  const entry = entries.find((e) => e.id === id);
+  if (entry) {
+    entry.mood = mood ?? undefined;
     entry.updatedAt = Date.now();
     await writeData(entries);
   }

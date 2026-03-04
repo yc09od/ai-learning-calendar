@@ -4,9 +4,10 @@ import { Entry } from '@diary/shared/types';
 declare global {
   interface Window {
     electronAPI: {
-      createEntry: (content: string, createdAt?: number) => Promise<Entry>;
+      createEntry: (content: string, createdAt?: number, mood?: string) => Promise<Entry>;
       listEntries: () => Promise<Entry[]>;
       updateEntry: (id: string, content: string) => Promise<void>;
+      updateMood: (id: string, mood: string | null) => Promise<void>;
       deleteEntry: (id: string) => Promise<void>;
     };
   }
@@ -24,12 +25,116 @@ function isSameDay(a: Date, b: Date) {
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
+const MOODS = [
+  '😊','😄','😁','😍','🥰','😌','😎','🤩',
+  '😔','😢','😭','😤','😠','😰','😨','😱',
+  '😴','🥱','🤔','🤗','😲','🥳','😏','🙄',
+];
+
 const btnBase: React.CSSProperties = {
   cursor: 'pointer',
   border: 'none',
   borderRadius: '4px',
   fontSize: '13px',
 };
+
+// ─── Mood Picker ──────────────────────────────────────────────────────────────
+
+function MoodPicker({ value, onChange }: { value: string | null; onChange: (mood: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title={value ? `心情：${value}（点击更改）` : '添加心情'}
+        style={{
+          fontSize: value ? '22px' : '16px',
+          width: '38px',
+          height: '38px',
+          border: value ? '2px solid #4CAF50' : '2px dashed #ccc',
+          borderRadius: '8px',
+          background: value ? '#e8f5e9' : '#fafafa',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.15s',
+          color: '#aaa',
+        }}
+      >
+        {value ?? '＋'}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: '44px',
+          left: 0,
+          zIndex: 50,
+          backgroundColor: '#fff',
+          border: '1px solid #e0e0e0',
+          borderRadius: '10px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+          padding: '8px',
+          width: '296px',
+        }}>
+          {value && (
+            <button
+              onClick={() => { onChange(null); setOpen(false); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                fontSize: '12px',
+                color: '#f44336',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 4px 6px',
+              }}
+            >
+              × 清除心情
+            </button>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
+            {MOODS.map((m) => (
+              <button
+                key={m}
+                onClick={() => { onChange(m); setOpen(false); }}
+                style={{
+                  fontSize: '20px',
+                  width: '32px',
+                  height: '32px',
+                  border: m === value ? '2px solid #4CAF50' : '1px solid transparent',
+                  borderRadius: '6px',
+                  background: m === value ? '#e8f5e9' : 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onMouseEnter={(e) => { if (m !== value) e.currentTarget.style.background = '#f5f5f5'; }}
+                onMouseLeave={(e) => { if (m !== value) e.currentTarget.style.background = 'none'; }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
@@ -209,14 +314,23 @@ function CalendarView({
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDow = new Date(year, month, 1).getDay();
 
-  const daysWithEntries = new Set(
-    entries
-      .filter((e) => {
-        const d = new Date(e.createdAt);
-        return d.getFullYear() === year && d.getMonth() === month;
-      })
-      .map((e) => new Date(e.createdAt).getDate())
-  );
+  // 收集当月所有日记，按时间降序（最新在前）
+  const daysWithEntries = new Set<number>();
+  const dayMoodsMap = new Map<number, string[]>(); // day → last 3 moods (newest first)
+  [...entries]
+    .filter((e) => {
+      const d = new Date(e.createdAt);
+      return d.getFullYear() === year && d.getMonth() === month;
+    })
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .forEach((e) => {
+      const day = new Date(e.createdAt).getDate();
+      daysWithEntries.add(day);
+      if (e.mood) {
+        const arr = dayMoodsMap.get(day) ?? [];
+        if (arr.length < 3) { arr.push(e.mood); dayMoodsMap.set(day, arr); }
+      }
+    });
 
   const cells: (number | null)[] = [
     ...Array(firstDow).fill(null),
@@ -308,7 +422,9 @@ function CalendarView({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'flex-start',
+                paddingTop: '18%',
+                boxSizing: 'border-box',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 border: '1px solid #e0e0e0',
@@ -323,17 +439,21 @@ function CalendarView({
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = bg)}
             >
               {day}
-              {hasEntry && (
-                <div
-                  style={{
-                    width: '5px',
-                    height: '5px',
-                    borderRadius: '50%',
-                    backgroundColor: isToday ? '#fff' : '#4CAF50',
-                    marginTop: '3px',
-                  }}
-                />
-              )}
+              {hasEntry && (() => {
+                const moods = dayMoodsMap.get(day) ?? [];
+                if (moods.length > 0) {
+                  return (
+                    <div style={{ display: 'flex', gap: '1px', marginTop: '3px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                      {moods.map((m, idx) => (
+                        <span key={idx} style={{ fontSize: '13px', lineHeight: 1 }}>{m}</span>
+                      ))}
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: isToday ? '#fff' : '#4CAF50', marginTop: '3px' }} />
+                );
+              })()}
             </div>
           );
         })}
@@ -358,18 +478,22 @@ function RecentEntries({
   month: number;
   onDayClick: (d: Date) => void;
 }) {
-  const [limit, setLimit] = useState(3);
+  const [pageSize, setPageSize] = useState(3);
+  const [page, setPage] = useState(1);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const monthEntries = [...entries]
+  const allMonthEntries = [...entries]
     .filter((e) => {
       const d = new Date(e.createdAt);
       return d.getFullYear() === year && d.getMonth() === month;
     })
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, limit);
+    .sort((a, b) => b.createdAt - a.createdAt);
 
-  if (monthEntries.length === 0) return null;
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(allMonthEntries.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const monthEntries = pageSize === 0 ? allMonthEntries : allMonthEntries.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  if (allMonthEntries.length === 0) return null;
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -382,22 +506,47 @@ function RecentEntries({
 
   return (
     <div style={{ marginTop: '32px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#555', margin: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#555', margin: 0, marginRight: '4px' }}>
           本月日记
         </h3>
-        <label style={{ fontSize: '13px', color: '#888', display: 'flex', alignItems: 'center', gap: '5px' }}>
-          显示
-          <input
-            type="number"
-            min={1}
-            max={99}
-            value={limit}
-            onChange={(e) => setLimit(Math.max(1, Number(e.target.value)))}
-            style={{ width: '44px', padding: '2px 4px', fontSize: '13px', borderRadius: '4px', border: '1px solid #ccc', textAlign: 'center' }}
-          />
-          个
-        </label>
+        <span style={{ fontSize: '20px', color: '#888' }}>每页</span>
+        {[3, 5, 10, 0].map((n) => (
+          <button
+            key={n}
+            onClick={() => { setPageSize(n); setPage(1); }}
+            style={{
+              ...btnBase,
+              padding: '3px 14px',
+              fontSize: '18px',
+              backgroundColor: pageSize === n ? '#4CAF50' : '#f0f0f0',
+              color: pageSize === n ? '#fff' : '#555',
+            }}
+          >
+            {n === 0 ? '全部' : n}
+          </button>
+        ))}
+        {pageSize !== 0 && totalPages > 1 && (
+          <>
+            <span style={{ fontSize: '20px', color: '#aaa', marginLeft: '4px' }}>
+              第 {safePage} / {totalPages} 页
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              style={{ ...btnBase, padding: '3px 12px', fontSize: '20px', backgroundColor: safePage === 1 ? '#f5f5f5' : '#f0f0f0', color: safePage === 1 ? '#ccc' : '#555' }}
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              style={{ ...btnBase, padding: '3px 12px', fontSize: '20px', backgroundColor: safePage === totalPages ? '#f5f5f5' : '#f0f0f0', color: safePage === totalPages ? '#ccc' : '#555' }}
+            >
+              ›
+            </button>
+          </>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {monthEntries.map((entry) => {
@@ -419,8 +568,9 @@ function RecentEntries({
             >
               <div
                 onClick={() => onDayClick(new Date(d.getFullYear(), d.getMonth(), d.getDate()))}
-                style={{ fontSize: '12px', color: '#888', marginBottom: '5px', cursor: 'pointer' }}
+                style={{ fontSize: '12px', color: '#888', marginBottom: '5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
+                {entry.mood && <span style={{ fontSize: '16px' }}>{entry.mood}</span>}
                 {label}
               </div>
               <div
@@ -467,8 +617,10 @@ function DayView({
 }) {
   const dayEntries = allEntries.filter((e) => isSameDay(new Date(e.createdAt), date));
   const [content, setContent] = useState('');
+  const [newMood, setNewMood] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [editMood, setEditMood] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const dateLabel = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 星期${WEEKDAYS[date.getDay()]}`;
@@ -487,8 +639,9 @@ function DayView({
 
   async function handleSave() {
     if (!content.trim()) return;
-    await window.electronAPI.createEntry(content, dateStamp());
+    await window.electronAPI.createEntry(content, dateStamp(), newMood || undefined);
     setContent('');
+    setNewMood(null);
     onRefresh();
   }
 
@@ -506,11 +659,13 @@ function DayView({
   function startEdit(entry: Entry) {
     setEditingId(entry.id);
     setEditContent(entry.content);
+    setEditMood(entry.mood ?? null);
   }
 
   async function handleUpdate() {
     if (!editingId || !editContent.trim()) return;
     await window.electronAPI.updateEntry(editingId, editContent);
+    await window.electronAPI.updateMood(editingId, editMood);
     setEditingId(null);
     onRefresh();
   }
@@ -545,12 +700,15 @@ function DayView({
             if (e.ctrlKey && e.key === 'Enter') handleSave();
           }}
         />
-        <button
-          onClick={handleSave}
-          style={{ ...btnBase, marginTop: '8px', padding: '8px 20px', backgroundColor: '#4CAF50', color: 'white', fontSize: '14px' }}
-        >
-          保存 (Ctrl+Enter)
-        </button>
+        <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <MoodPicker value={newMood} onChange={setNewMood} />
+          <button
+            onClick={handleSave}
+            style={{ ...btnBase, padding: '8px 20px', backgroundColor: '#4CAF50', color: 'white', fontSize: '14px' }}
+          >
+            保存 (Ctrl+Enter)
+          </button>
+        </div>
       </div>
 
       {/* Entries */}
@@ -577,7 +735,8 @@ function DayView({
                   }}
                   autoFocus
                 />
-                <div style={{ marginTop: '6px', display: 'flex', gap: '6px' }}>
+                <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <MoodPicker value={editMood} onChange={setEditMood} />
                   <button onClick={handleUpdate} style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#4CAF50', color: 'white' }}>
                     保存 (Ctrl+Enter)
                   </button>
@@ -587,7 +746,10 @@ function DayView({
                 </div>
               </>
             ) : (
-              <p style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{entry.content}</p>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '8px' }}>
+                {entry.mood && <span style={{ fontSize: '26px', flexShrink: 0, lineHeight: '1.4' }}>{entry.mood}</span>}
+                <p style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{entry.content}</p>
+              </div>
             )}
             <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px' }}>
               {editingId !== entry.id && (
@@ -622,7 +784,10 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
   const [filterMonth, setFilterMonth] = useState<number | null>(now.getMonth() + 1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [editMood, setEditMood] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
 
   const years = [...new Set([
     now.getFullYear(),
@@ -639,6 +804,14 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
     .sort((a, b) => b.createdAt - a.createdAt);
 
   const isFiltered = filterYear !== null || filterMonth !== null;
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paged = pageSize === 0 ? filtered : filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function resetPage() { setPage(1); }
+  function changeFilter(year: number | null, month: number | null) {
+    setFilterYear(year); setFilterMonth(month); resetPage();
+  }
 
   return (
     <div style={{ padding: '28px', fontFamily: 'sans-serif', maxWidth: '680px', margin: '0 auto' }}>
@@ -646,8 +819,8 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <select
           value={filterYear ?? ''}
-          onChange={(e) => setFilterYear(e.target.value ? Number(e.target.value) : null)}
-          style={{ fontSize: '14px', padding: '5px 8px', borderRadius: '5px', border: '1px solid #ccc' }}
+          onChange={(e) => changeFilter(e.target.value ? Number(e.target.value) : null, filterMonth)}
+          style={{ fontSize: '21px', padding: '8px 12px', borderRadius: '5px', border: '1px solid #ccc' }}
         >
           <option value="">所有年份</option>
           {years.map((y) => <option key={y} value={y}>{y}年</option>)}
@@ -655,8 +828,8 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
 
         <select
           value={filterMonth ?? ''}
-          onChange={(e) => setFilterMonth(e.target.value ? Number(e.target.value) : null)}
-          style={{ fontSize: '14px', padding: '5px 8px', borderRadius: '5px', border: '1px solid #ccc' }}
+          onChange={(e) => changeFilter(filterYear, e.target.value ? Number(e.target.value) : null)}
+          style={{ fontSize: '21px', padding: '8px 12px', borderRadius: '5px', border: '1px solid #ccc' }}
         >
           <option value="">所有月份</option>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -666,22 +839,63 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
 
         {isFiltered && (
           <button
-            onClick={() => { setFilterYear(null); setFilterMonth(null); }}
-            style={{ ...btnBase, padding: '5px 14px', backgroundColor: '#f0f0f0', color: '#555', fontSize: '13px' }}
+            onClick={() => changeFilter(null, null)}
+            style={{ ...btnBase, padding: '8px 21px', backgroundColor: '#f0f0f0', color: '#555', fontSize: '20px' }}
           >
             清除
           </button>
         )}
         <button
-          onClick={() => { setFilterYear(now.getFullYear()); setFilterMonth(now.getMonth() + 1); }}
-          style={{ ...btnBase, padding: '5px 14px', backgroundColor: '#e8f5e9', color: '#4CAF50', fontSize: '13px' }}
+          onClick={() => changeFilter(now.getFullYear(), now.getMonth() + 1)}
+          style={{ ...btnBase, padding: '8px 21px', backgroundColor: '#e8f5e9', color: '#4CAF50', fontSize: '20px' }}
         >
           当前
         </button>
 
-        <span style={{ color: '#aaa', fontSize: '13px', marginLeft: 'auto' }}>
+        <span style={{ color: '#aaa', fontSize: '20px', marginLeft: 'auto' }}>
           共 {filtered.length} 篇
         </span>
+      </div>
+
+      {/* Page size row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px' }}>
+        <span style={{ fontSize: '20px', color: '#888' }}>每页</span>
+        {[5, 10, 20, 0].map((n) => (
+          <button
+            key={n}
+            onClick={() => { setPageSize(n); resetPage(); }}
+            style={{
+              ...btnBase,
+              padding: '3px 14px',
+              fontSize: '18px',
+              backgroundColor: pageSize === n ? '#4CAF50' : '#f0f0f0',
+              color: pageSize === n ? '#fff' : '#555',
+            }}
+          >
+            {n === 0 ? '全部' : n}
+          </button>
+        ))}
+        {pageSize !== 0 && totalPages > 1 && (
+          <>
+            <span style={{ fontSize: '20px', color: '#aaa', marginLeft: '8px' }}>
+              第 {safePage} / {totalPages} 页
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              style={{ ...btnBase, padding: '3px 12px', fontSize: '20px', backgroundColor: safePage === 1 ? '#f5f5f5' : '#f0f0f0', color: safePage === 1 ? '#ccc' : '#555' }}
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              style={{ ...btnBase, padding: '3px 12px', fontSize: '20px', backgroundColor: safePage === totalPages ? '#f5f5f5' : '#f0f0f0', color: safePage === totalPages ? '#ccc' : '#555' }}
+            >
+              ›
+            </button>
+          </>
+        )}
       </div>
 
       {/* Entries */}
@@ -689,7 +903,7 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
         <p style={{ color: '#aaa' }}>暂无日记</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {filtered.map((entry) => {
+          {paged.map((entry) => {
             const d = new Date(entry.createdAt);
             const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WEEKDAYS[d.getDay()]}`;
             const isEditing = editingId === entry.id;
@@ -707,7 +921,8 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f7f0')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#fafafa')}
               >
-                <div style={{ fontSize: '12px', color: '#888', marginBottom: '6px' }}>
+                <div style={{ fontSize: '12px', color: '#888', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {entry.mood && <span style={{ fontSize: '16px' }}>{entry.mood}</span>}
                   {label} · {d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                 </div>
 
@@ -719,15 +934,28 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                       style={{ width: '100%', minHeight: '80px', marginTop: '4px', padding: '8px', fontSize: '14px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #aaa', resize: 'vertical' }}
                       onKeyDown={async (e) => {
                         if (e.ctrlKey && e.key === 'Enter') {
-                          if (editContent.trim()) { await window.electronAPI.updateEntry(entry.id, editContent); setEditingId(null); onRefresh(); }
+                          if (editContent.trim()) {
+                            await window.electronAPI.updateEntry(entry.id, editContent);
+                            await window.electronAPI.updateMood(entry.id, editMood);
+                            setEditingId(null);
+                            onRefresh();
+                          }
                         }
                         if (e.key === 'Escape') setEditingId(null);
                       }}
                       autoFocus
                     />
-                    <div style={{ marginTop: '6px', display: 'flex', gap: '6px' }}>
+                    <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <MoodPicker value={editMood} onChange={setEditMood} />
                       <button
-                        onClick={async () => { if (editContent.trim()) { await window.electronAPI.updateEntry(entry.id, editContent); setEditingId(null); onRefresh(); } }}
+                        onClick={async () => {
+                          if (editContent.trim()) {
+                            await window.electronAPI.updateEntry(entry.id, editContent);
+                            await window.electronAPI.updateMood(entry.id, editMood);
+                            setEditingId(null);
+                            onRefresh();
+                          }
+                        }}
                         style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#4CAF50', color: 'white', fontSize: '13px' }}
                       >
                         保存 (Ctrl+Enter)
@@ -749,7 +977,7 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                 {!isEditing && (
                   <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px' }}>
                     <button
-                      onClick={() => { setEditingId(entry.id); setEditContent(entry.content); }}
+                      onClick={() => { setEditingId(entry.id); setEditContent(entry.content); setEditMood(entry.mood ?? null); }}
                       style={{ ...btnBase, padding: '3px 8px', backgroundColor: '#2196F3', color: 'white', fontSize: '12px' }}
                     >
                       编辑
