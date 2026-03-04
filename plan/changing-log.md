@@ -14,3 +14,7 @@ D1,M 1.0.7:
 1. [Done] 桌面版提供界面多语种功能。在右nav bar，最下方， center且padding-bottom 10px，添加一个drop list。添加一个语言seletor。暂时考虑中，英，法。根据当前系统default的值应该，第一次安装时设置。且帮我翻译界面上的文字然后做成中，英，法版本的字典。
 2. [Done] 手机版提供界面多语种功能。在右nav bar，最下方， center且padding-bottom 10px，添加一个drop list。添加一个语言seletor。暂时考虑中，英，法。根据当前系统default的值应该，第一次安装时设置。且帮我翻译界面上的文字然后做成中，英，法版本的字典。
 3. [Done] 桌面版，和手机版，top nav都要有setting button和右nav bar
+
+M 1.0.8:
+
+1. [Done] 改变手机版logo和名字
