@@ -7,6 +7,7 @@ import { RootStackParamList, TabParamList } from '../types/navigation';
 import CalendarScreen from '../screens/CalendarScreen';
 import AllEntriesScreen from '../screens/AllEntriesScreen';
 import DayScreen from '../screens/DayScreen';
+import { useLang } from '../LangContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -75,6 +76,7 @@ function ListIcon({ color }: { color: string }) {
 // ─── Tab Navigator ────────────────────────────────────────────────────────────
 
 function TabNavigator() {
+  const { t } = useLang();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -96,7 +98,7 @@ function TabNavigator() {
         name="Calendar"
         component={CalendarScreen}
         options={{
-          title: '我的日记本',
+          title: t.appTitle,
           tabBarIcon: ({ color }) => <DiaryIcon color={color} />,
         }}
       />
@@ -104,7 +106,7 @@ function TabNavigator() {
         name="AllEntries"
         component={AllEntriesScreen}
         options={{
-          title: '所有日记',
+          title: t.navAllEntries,
           tabBarIcon: ({ color }) => <ListIcon color={color} />,
         }}
       />

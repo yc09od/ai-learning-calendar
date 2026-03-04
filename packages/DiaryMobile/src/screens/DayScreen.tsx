@@ -15,8 +15,7 @@ import {
 import { Entry } from '@diary/shared/types';
 import { listEntries, createEntry, updateEntry, updateMood, deleteEntry } from '../storage/entryStorage';
 import { DayScreenProps } from '../types/navigation';
-
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+import { useLang } from '../LangContext';
 
 const MOODS = [
   '😊','😄','😁','😍','🥰','😌','😎','🤩',
@@ -37,6 +36,7 @@ function isSameDay(ts1: number, ts2: number): boolean {
 // ─── Mood Picker ──────────────────────────────────────────────────────────────
 
 function MoodPicker({ value, onChange }: { value: string | null; onChange: (m: string | null) => void }) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
 
   return (
@@ -53,14 +53,14 @@ function MoodPicker({ value, onChange }: { value: string | null; onChange: (m: s
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={mpStyles.overlay} onPress={() => setOpen(false)}>
           <Pressable style={mpStyles.panel} onPress={() => {}}>
-            <Text style={mpStyles.title}>选择心情</Text>
+            <Text style={mpStyles.title}>{t.selectMood}</Text>
             {value && (
               <TouchableOpacity
                 onPress={() => { onChange(null); setOpen(false); }}
                 style={mpStyles.clearBtn}
                 activeOpacity={0.7}
               >
-                <Text style={mpStyles.clearText}>× 清除心情</Text>
+                <Text style={mpStyles.clearText}>{t.clearMood}</Text>
               </TouchableOpacity>
             )}
             <View style={mpStyles.grid}>
@@ -76,7 +76,7 @@ function MoodPicker({ value, onChange }: { value: string | null; onChange: (m: s
               ))}
             </View>
             <TouchableOpacity style={mpStyles.cancelBtn} onPress={() => setOpen(false)} activeOpacity={0.7}>
-              <Text style={mpStyles.cancelText}>取消</Text>
+              <Text style={mpStyles.cancelText}>{t.cancel}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -159,9 +159,10 @@ const mpStyles = StyleSheet.create({
 // ─── Day Screen ───────────────────────────────────────────────────────────────
 
 export default function DayScreen({ route, navigation }: DayScreenProps) {
+  const { t } = useLang();
   const { dateTimestamp } = route.params;
   const date = new Date(dateTimestamp);
-  const dateLabel = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 星期${WEEKDAYS[date.getDay()]}`;
+  const dateLabel = t.dateLabel(date);
 
   const [dayEntries, setDayEntries] = useState<Entry[]>([]);
   const [newContent, setNewContent] = useState('');
@@ -207,10 +208,10 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
   }
 
   async function handleDelete(id: string) {
-    Alert.alert('删除日记', '确定要删除这篇日记吗？', [
-      { text: '取消', style: 'cancel' },
+    Alert.alert(t.deleteEntryTitle, t.deleteEntryMsg, [
+      { text: t.cancel, style: 'cancel' },
       {
-        text: '删除',
+        text: t.delete,
         style: 'destructive',
         onPress: async () => {
           await deleteEntry(id);
@@ -236,10 +237,8 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
     await loadDayEntries();
   }
 
-  // Memoized renderItem. Deps include editing state so the editing form
-  // updates in place without re-mounting all items.
   const renderItem = useCallback(({ item }: { item: Entry }) => {
-    const timeStr = new Date(item.createdAt).toLocaleTimeString('zh-CN', {
+    const timeStr = new Date(item.createdAt).toLocaleTimeString(t.locale, {
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -263,13 +262,13 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
                 style={[styles.btn, styles.btnGreen, styles.btnSmall]}
                 onPress={handleUpdate}
               >
-                <Text style={styles.btnText}>保存</Text>
+                <Text style={styles.btnText}>{t.save}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btn, styles.btnGray, styles.btnSmall]}
                 onPress={() => setEditingId(null)}
               >
-                <Text style={styles.btnText}>取消</Text>
+                <Text style={styles.btnText}>{t.cancel}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -284,13 +283,13 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
                 style={[styles.btn, styles.btnBlue, styles.btnSmall]}
                 onPress={() => startEdit(item)}
               >
-                <Text style={styles.btnText}>编辑</Text>
+                <Text style={styles.btnText}>{t.edit}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btn, styles.btnRed, styles.btnSmall]}
                 onPress={() => handleDelete(item.id)}
               >
-                <Text style={styles.btnText}>删除</Text>
+                <Text style={styles.btnText}>{t.delete}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -298,23 +297,18 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
       </View>
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, editContent, editMood]);
+  }, [editingId, editContent, editMood, t]);
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/*
-        Input area rendered outside FlatList.
-        Putting inline JSX in ListHeaderComponent causes FlatList to
-        re-measure the header on every keystroke → layout loop → freeze.
-      */}
       <View style={styles.inputArea}>
         <TextInput
           value={newContent}
           onChangeText={setNewContent}
-          placeholder="写下这一天的故事..."
+          placeholder={t.writeStory}
           placeholderTextColor="#bbb"
           multiline
           style={styles.input}
@@ -323,7 +317,7 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
         <View style={styles.saveRow}>
           <MoodPicker value={newMood} onChange={setNewMood} />
           <TouchableOpacity style={[styles.btn, styles.btnGreen, styles.btnFlex]} onPress={handleSave}>
-            <Text style={styles.btnText}>保存</Text>
+            <Text style={styles.btnText}>{t.save}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -334,7 +328,7 @@ export default function DayScreen({ route, navigation }: DayScreenProps) {
         keyboardShouldPersistTaps="handled"
         renderItem={renderItem}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>今天还没有日记，写下第一篇吧！</Text>
+          <Text style={styles.emptyText}>{t.noEntriesToday}</Text>
         }
         contentContainerStyle={styles.listContent}
       />

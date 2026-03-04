@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Entry } from '@diary/shared/types';
 import { listEntries } from '../storage/entryStorage';
 import { AllEntriesScreenProps } from '../types/navigation';
-
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+import { useLang } from '../LangContext';
+import { SettingsDrawer } from '../components/SettingsDrawer';
 
 type ListFilter = 'recent3' | 'recent10' | 'all';
 
@@ -22,14 +22,24 @@ const TODAY_YEAR = _today.getFullYear();
 const TODAY_MONTH = _today.getMonth(); // 0-indexed
 
 export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) {
+  const { t } = useLang();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [listFilter, setListFilter] = useState<ListFilter>('all');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Year/month filter. null = not filtering by that dimension.
-  // Default: current year + current month.
   const [filterYear, setFilterYear] = useState<number | null>(TODAY_YEAR);
   const [filterMonth, setFilterMonth] = useState<number | null>(TODAY_MONTH);
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setSettingsOpen(true)} style={styles.headerGear} activeOpacity={0.7}>
+          <Text style={styles.headerGearText}>⚙</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   useFocusEffect(useCallback(() => { loadEntries(); }, []));
 
@@ -90,24 +100,19 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
 
   // ── Labels ────────────────────────────────────────────────────────────────
 
-  const dateLabel =
-    filterYear !== null && filterMonth !== null ? `${filterYear}年${filterMonth + 1}月` :
-    filterYear !== null                          ? `${filterYear}年` :
-    filterMonth !== null                         ? `${filterMonth + 1}月` :
-    '全部';
-
-  const sectionLabel = isFiltering ? `${dateLabel}日记` : '全部日记';
+  const dateLabel = t.dateFilterLabel(filterYear, filterMonth);
+  const sectionLabel = isFiltering ? t.sectionLabelFiltered(dateLabel) : t.allEntriesTitle;
 
   const recentLabel =
-    listFilter === 'recent3'  ? '最近 3 篇' :
-    listFilter === 'recent10' ? '最近 10 篇' :
-    '全部';
+    listFilter === 'recent3'  ? t.recent3Label :
+    listFilter === 'recent10' ? t.recent10Label :
+    t.allBtn;
 
   // ── Render item ───────────────────────────────────────────────────────────
 
   const renderItem = useCallback(({ item }: { item: Entry }) => {
     const d = new Date(item.createdAt);
-    const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WEEKDAYS[d.getDay()]}`;
+    const label = t.dateLabel(d);
     const preview = item.content.length > 80 ? item.content.slice(0, 80) + '...' : item.content;
     return (
       <TouchableOpacity
@@ -125,19 +130,17 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
         <Text style={styles.entryPreview}>{preview}</Text>
       </TouchableOpacity>
     );
-  }, [navigation]);
+  }, [navigation, t]);
 
   if (loading) {
     return <View style={styles.loader}><ActivityIndicator size="large" color="#4CAF50" /></View>;
   }
 
   return (
+    <>
     <View style={styles.container}>
 
-      {/*
-        ── Year / Month filter ──────────────────────────────────────────────
-        Rendered outside FlatList to avoid reference-equality layout loops.
-      */}
+      {/* ── Year / Month filter ─────────────────────────────────────────── */}
       <View style={styles.dateFilterRow}>
         {/* Year selector */}
         <View style={styles.ymGroup}>
@@ -145,7 +148,7 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
             <Text style={styles.arrowText}>‹</Text>
           </TouchableOpacity>
           <Text style={[styles.ymText, !isFiltering && styles.ymTextMuted]}>
-            {filterYear !== null ? `${filterYear}年` : '--年'}
+            {filterYear !== null ? t.filterYearDisplay(filterYear) : t.noYearDisplay}
           </Text>
           <TouchableOpacity onPress={nextYear} style={styles.arrowBtn} activeOpacity={0.7}>
             <Text style={styles.arrowText}>›</Text>
@@ -158,7 +161,7 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
             <Text style={styles.arrowText}>‹</Text>
           </TouchableOpacity>
           <Text style={[styles.ymText, !isFiltering && styles.ymTextMuted]}>
-            {filterMonth !== null ? `${filterMonth + 1}月` : '--月'}
+            {filterMonth !== null ? t.filterMonthDisplay(filterMonth) : t.noMonthDisplay}
           </Text>
           <TouchableOpacity onPress={nextMonth} style={styles.arrowBtn} activeOpacity={0.7}>
             <Text style={styles.arrowText}>›</Text>
@@ -171,7 +174,7 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
           style={[styles.actionBtn, styles.clearBtn]}
           activeOpacity={0.7}
         >
-          <Text style={styles.clearBtnText}>清除</Text>
+          <Text style={styles.clearBtnText}>{t.clearFilter}</Text>
         </TouchableOpacity>
 
         {/* Current */}
@@ -180,14 +183,14 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
           style={[styles.actionBtn, styles.currentBtn]}
           activeOpacity={0.7}
         >
-          <Text style={styles.currentBtnText}>当前</Text>
+          <Text style={styles.currentBtnText}>{t.current}</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Recent-N filter + count ────────────────────────────────────────── */}
+      {/* ── Recent-N filter + count ──────────────────────────────────────── */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>
-          {sectionLabel} · {recentLabel}（{displayedEntries.length} 篇）
+          {`${sectionLabel} · ${recentLabel} (${t.countTotal(displayedEntries.length)})`}
         </Text>
         <View style={styles.filterRow}>
           {(['recent3', 'recent10', 'all'] as const).map((f) => (
@@ -198,7 +201,7 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
               activeOpacity={0.7}
             >
               <Text style={[styles.filterTabText, listFilter === f && styles.filterTabTextActive]}>
-                {f === 'recent3' ? '最近3' : f === 'recent10' ? '最近10' : '全部'}
+                {f === 'recent3' ? t.recent3Btn : f === 'recent10' ? t.recent10Btn : t.allBtn}
               </Text>
             </TouchableOpacity>
           ))}
@@ -211,20 +214,23 @@ export default function AllEntriesScreen({ navigation }: AllEntriesScreenProps) 
         renderItem={renderItem}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {isFiltering ? `${dateLabel}暂无日记` : '还没有日记，从日历页开始写吧！'}
+            {isFiltering ? t.noEntriesFiltered(dateLabel) : t.noEntriesStart}
           </Text>
         }
         contentContainerStyle={styles.listContent}
       />
     </View>
+    <SettingsDrawer visible={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerGear: { marginRight: 4, padding: 8, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.2)' },
+  headerGearText: { fontSize: 20, color: '#fff' },
 
-  // ── Date filter row ──────────────────────────────────────────────────────
   dateFilterRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,7 +254,6 @@ const styles = StyleSheet.create({
   currentBtn: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   currentBtnText: { fontSize: 12, color: '#fff', fontWeight: '600' },
 
-  // ── Section header ───────────────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -266,7 +271,6 @@ const styles = StyleSheet.create({
   filterTabText: { fontSize: 11, color: '#666' },
   filterTabTextActive: { color: '#fff', fontWeight: 'bold' },
 
-  // ── List ─────────────────────────────────────────────────────────────────
   emptyText: { color: '#aaa', textAlign: 'center', marginTop: 40, fontSize: 14, paddingHorizontal: 16 },
   listContent: { paddingBottom: 24 },
   entryCard: { marginHorizontal: 16, marginTop: 10, padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', backgroundColor: '#fafafa' },

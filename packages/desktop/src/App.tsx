@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Entry } from '@diary/shared/types';
+import { type Lang, type T, getT, detectLang, saveLang } from './i18n';
 
 declare global {
   interface Window {
@@ -23,8 +24,6 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-
 const MOODS = [
   '😊','😄','😁','😍','🥰','😌','😎','🤩',
   '😔','😢','😭','😤','😠','😰','😨','😱',
@@ -40,7 +39,7 @@ const btnBase: React.CSSProperties = {
 
 // ─── Mood Picker ──────────────────────────────────────────────────────────────
 
-function MoodPicker({ value, onChange }: { value: string | null; onChange: (mood: string | null) => void }) {
+function MoodPicker({ value, onChange, t }: { value: string | null; onChange: (mood: string | null) => void; t: T }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -57,7 +56,7 @@ function MoodPicker({ value, onChange }: { value: string | null; onChange: (mood
     <div ref={ref} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        title={value ? `心情：${value}（点击更改）` : '添加心情'}
+        title={value ? t.moodTitle(value) : t.addMood}
         style={{
           fontSize: value ? '22px' : '16px',
           width: '38px',
@@ -103,7 +102,7 @@ function MoodPicker({ value, onChange }: { value: string | null; onChange: (mood
                 padding: '2px 4px 6px',
               }}
             >
-              × 清除心情
+              {t.clearMood}
             </button>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '4px' }}>
@@ -138,7 +137,7 @@ function MoodPicker({ value, onChange }: { value: string | null; onChange: (mood
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
-function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
+function ConfirmDialog({ message, onConfirm, onCancel, t }: { message: string; onConfirm: () => void; onCancel: () => void; t: T }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Enter') onConfirm();
@@ -175,14 +174,14 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
             onClick={onCancel}
             style={{ ...btnBase, padding: '8px 22px', backgroundColor: '#f0f0f0', color: '#555', fontSize: '14px' }}
           >
-            取消
+            {t.cancel}
           </button>
           <button
             onClick={onConfirm}
             autoFocus
             style={{ ...btnBase, padding: '8px 22px', backgroundColor: '#f44336', color: '#fff', fontSize: '14px' }}
           >
-            删除
+            {t.delete}
           </button>
         </div>
       </div>
@@ -198,10 +197,19 @@ function ConfirmDialog({ message, onConfirm, onCancel }: { message: string; onCo
 
 // ─── Settings Panel ────────────────────────────────────────────────────────────
 
-function SettingsPanel({ onClose }: { onClose: () => void }) {
+function SettingsPanel({
+  onClose,
+  t,
+  lang,
+  onLangChange,
+}: {
+  onClose: () => void;
+  t: T;
+  lang: Lang;
+  onLangChange: (l: Lang) => void;
+}) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -248,7 +256,7 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
             color: '#fff',
           }}
         >
-          <span style={{ fontSize: '17px', fontWeight: 'bold' }}>设置</span>
+          <span style={{ fontSize: '17px', fontWeight: 'bold' }}>{t.settings}</span>
           <button
             onClick={onClose}
             style={{
@@ -278,10 +286,30 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
               color: '#333',
             }}
           >
-            <span>版本</span>
+            <span>{t.version}</span>
             <span style={{ color: '#888', fontSize: '13px' }}>v{APP_VERSION}</span>
           </li>
         </ul>
+
+        {/* Language selector — bottom, centered, padding-bottom 10px */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px 20px 10px' }}>
+          <select
+            value={lang}
+            onChange={(e) => onLangChange(e.target.value as Lang)}
+            style={{
+              fontSize: '14px',
+              padding: '6px 10px',
+              borderRadius: '5px',
+              border: '1px solid #ddd',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+          >
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="fr">Français</option>
+          </select>
+        </div>
       </div>
 
       <style>{`
@@ -301,11 +329,13 @@ function CalendarView({
   entries,
   onMonthChange,
   onDayClick,
+  t,
 }: {
   currentMonth: Date;
   entries: Entry[];
   onMonthChange: (d: Date) => void;
   onDayClick: (d: Date) => void;
+  t: T;
 }) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -314,9 +344,8 @@ function CalendarView({
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDow = new Date(year, month, 1).getDay();
 
-  // 收集当月所有日记，按时间降序（最新在前）
   const daysWithEntries = new Set<number>();
-  const dayMoodsMap = new Map<number, string[]>(); // day → last 3 moods (newest first)
+  const dayMoodsMap = new Map<number, string[]>();
   [...entries]
     .filter((e) => {
       const d = new Date(e.createdAt);
@@ -362,7 +391,7 @@ function CalendarView({
           ‹
         </button>
         <span style={{ fontSize: '20px', fontWeight: 'bold' }}>
-          {year}年{month + 1}月
+          {t.monthLabel(year, month)}
         </span>
         <button
           onClick={() => onMonthChange(new Date(year, month + 1, 1))}
@@ -374,9 +403,9 @@ function CalendarView({
 
       {/* Weekday headers */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', marginBottom: '6px' }}>
-        {WEEKDAYS.map((w, i) => (
+        {t.weekdays.map((w, i) => (
           <div
-            key={w}
+            key={i}
             style={{
               textAlign: 'center',
               fontWeight: 'bold',
@@ -460,7 +489,7 @@ function CalendarView({
       </div>
 
       {/* Recent entries */}
-      <RecentEntries entries={entries} year={year} month={month} onDayClick={onDayClick} />
+      <RecentEntries entries={entries} year={year} month={month} onDayClick={onDayClick} t={t} />
     </div>
   );
 }
@@ -472,11 +501,13 @@ function RecentEntries({
   year,
   month,
   onDayClick,
+  t,
 }: {
   entries: Entry[];
   year: number;
   month: number;
   onDayClick: (d: Date) => void;
+  t: T;
 }) {
   const [pageSize, setPageSize] = useState(3);
   const [page, setPage] = useState(1);
@@ -508,9 +539,9 @@ function RecentEntries({
     <div style={{ marginTop: '32px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: '15px', fontWeight: 'bold', color: '#555', margin: 0, marginRight: '4px' }}>
-          本月日记
+          {t.thisMonthDiary}
         </h3>
-        <span style={{ fontSize: '20px', color: '#888' }}>每页</span>
+        <span style={{ fontSize: '20px', color: '#888' }}>{t.perPage}</span>
         {[3, 5, 10, 0].map((n) => (
           <button
             key={n}
@@ -523,13 +554,13 @@ function RecentEntries({
               color: pageSize === n ? '#fff' : '#555',
             }}
           >
-            {n === 0 ? '全部' : n}
+            {n === 0 ? t.allBtn : n}
           </button>
         ))}
         {pageSize !== 0 && totalPages > 1 && (
           <>
             <span style={{ fontSize: '20px', color: '#aaa', marginLeft: '4px' }}>
-              第 {safePage} / {totalPages} 页
+              {t.pageOf(safePage, totalPages)}
             </span>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -551,7 +582,7 @@ function RecentEntries({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {monthEntries.map((entry) => {
           const d = new Date(entry.createdAt);
-          const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WEEKDAYS[d.getDay()]}`;
+          const label = t.dateLabel(d);
           const isExpanded = expandedIds.has(entry.id);
           return (
             <div
@@ -592,7 +623,7 @@ function RecentEntries({
                 onClick={() => toggleExpand(entry.id)}
                 style={{ marginTop: '5px', background: 'none', border: 'none', color: '#4CAF50', fontSize: '12px', cursor: 'pointer', padding: 0 }}
               >
-                {isExpanded ? '收起 ▲' : '展开 ▼'}
+                {isExpanded ? t.collapse : t.expand}
               </button>
             </div>
           );
@@ -609,11 +640,13 @@ function DayView({
   allEntries,
   onBack,
   onRefresh,
+  t,
 }: {
   date: Date;
   allEntries: Entry[];
   onBack: () => void;
   onRefresh: () => void;
+  t: T;
 }) {
   const dayEntries = allEntries.filter((e) => isSameDay(new Date(e.createdAt), date));
   const [content, setContent] = useState('');
@@ -623,7 +656,7 @@ function DayView({
   const [editMood, setEditMood] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  const dateLabel = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 星期${WEEKDAYS[date.getDay()]}`;
+  const dateLabel = t.dateLabel(date);
 
   function dateStamp() {
     const now = new Date();
@@ -676,7 +709,7 @@ function DayView({
         onClick={onBack}
         style={{ ...btnBase, padding: '6px 14px', backgroundColor: '#f0f0f0', marginBottom: '16px', fontSize: '14px' }}
       >
-        ← 返回日历
+        {t.backToCalendar}
       </button>
       <h2 style={{ margin: '0 0 20px', fontSize: '22px' }}>{dateLabel}</h2>
 
@@ -685,7 +718,7 @@ function DayView({
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="写下这一天的故事..."
+          placeholder={t.writeStory}
           style={{
             width: '100%',
             height: '140px',
@@ -701,19 +734,19 @@ function DayView({
           }}
         />
         <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <MoodPicker value={newMood} onChange={setNewMood} />
+          <MoodPicker value={newMood} onChange={setNewMood} t={t} />
           <button
             onClick={handleSave}
             style={{ ...btnBase, padding: '8px 20px', backgroundColor: '#4CAF50', color: 'white', fontSize: '14px' }}
           >
-            保存 (Ctrl+Enter)
+            {t.save}
           </button>
         </div>
       </div>
 
       {/* Entries */}
       {dayEntries.length === 0 ? (
-        <p style={{ color: '#aaa' }}>今天还没有日记，写下第一篇吧！</p>
+        <p style={{ color: '#aaa' }}>{t.noEntriesToday}</p>
       ) : (
         dayEntries.map((entry) => (
           <div
@@ -721,7 +754,7 @@ function DayView({
             style={{ border: '1px solid #e0e0e0', padding: '14px', marginBottom: '10px', borderRadius: '8px', position: 'relative' }}
           >
             <small style={{ color: '#aaa' }}>
-              {new Date(entry.createdAt).toLocaleTimeString('zh-CN')}
+              {new Date(entry.createdAt).toLocaleTimeString(t.locale)}
             </small>
             {editingId === entry.id ? (
               <>
@@ -736,12 +769,12 @@ function DayView({
                   autoFocus
                 />
                 <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                  <MoodPicker value={editMood} onChange={setEditMood} />
+                  <MoodPicker value={editMood} onChange={setEditMood} t={t} />
                   <button onClick={handleUpdate} style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#4CAF50', color: 'white' }}>
-                    保存 (Ctrl+Enter)
+                    {t.save}
                   </button>
                   <button onClick={() => setEditingId(null)} style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#999', color: 'white' }}>
-                    取消 (Esc)
+                    {t.cancelEsc}
                   </button>
                 </div>
               </>
@@ -754,11 +787,11 @@ function DayView({
             <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px' }}>
               {editingId !== entry.id && (
                 <button onClick={() => startEdit(entry)} style={{ ...btnBase, padding: '3px 8px', backgroundColor: '#2196F3', color: 'white' }}>
-                  编辑
+                  {t.edit}
                 </button>
               )}
               <button onClick={() => handleDelete(entry.id)} style={{ ...btnBase, padding: '3px 8px', backgroundColor: '#f44336', color: 'white' }}>
-                删除
+                {t.delete}
               </button>
             </div>
           </div>
@@ -767,9 +800,10 @@ function DayView({
 
       {pendingDeleteId && (
         <ConfirmDialog
-          message="确认删除这篇日记？"
+          message={t.confirmDeleteMessage}
           onConfirm={confirmDelete}
           onCancel={() => setPendingDeleteId(null)}
+          t={t}
         />
       )}
     </div>
@@ -778,7 +812,7 @@ function DayView({
 
 // ─── All Entries View ─────────────────────────────────────────────────────────
 
-function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: () => void }) {
+function AllEntriesView({ entries, onRefresh, t }: { entries: Entry[]; onRefresh: () => void; t: T }) {
   const now = new Date();
   const [filterYear, setFilterYear] = useState<number | null>(now.getFullYear());
   const [filterMonth, setFilterMonth] = useState<number | null>(now.getMonth() + 1);
@@ -822,8 +856,8 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
           onChange={(e) => changeFilter(e.target.value ? Number(e.target.value) : null, filterMonth)}
           style={{ fontSize: '21px', padding: '8px 12px', borderRadius: '5px', border: '1px solid #ccc' }}
         >
-          <option value="">所有年份</option>
-          {years.map((y) => <option key={y} value={y}>{y}年</option>)}
+          <option value="">{t.allYears}</option>
+          {years.map((y) => <option key={y} value={y}>{t.yearOption(y)}</option>)}
         </select>
 
         <select
@@ -831,9 +865,9 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
           onChange={(e) => changeFilter(filterYear, e.target.value ? Number(e.target.value) : null)}
           style={{ fontSize: '21px', padding: '8px 12px', borderRadius: '5px', border: '1px solid #ccc' }}
         >
-          <option value="">所有月份</option>
+          <option value="">{t.allMonths}</option>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>{m}月</option>
+            <option key={m} value={m}>{t.monthOption(m)}</option>
           ))}
         </select>
 
@@ -842,24 +876,24 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
             onClick={() => changeFilter(null, null)}
             style={{ ...btnBase, padding: '8px 21px', backgroundColor: '#f0f0f0', color: '#555', fontSize: '20px' }}
           >
-            清除
+            {t.clearFilter}
           </button>
         )}
         <button
           onClick={() => changeFilter(now.getFullYear(), now.getMonth() + 1)}
           style={{ ...btnBase, padding: '8px 21px', backgroundColor: '#e8f5e9', color: '#4CAF50', fontSize: '20px' }}
         >
-          当前
+          {t.current}
         </button>
 
         <span style={{ color: '#aaa', fontSize: '20px', marginLeft: 'auto' }}>
-          共 {filtered.length} 篇
+          {t.totalEntries(filtered.length)}
         </span>
       </div>
 
       {/* Page size row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px' }}>
-        <span style={{ fontSize: '20px', color: '#888' }}>每页</span>
+        <span style={{ fontSize: '20px', color: '#888' }}>{t.perPage}</span>
         {[5, 10, 20, 0].map((n) => (
           <button
             key={n}
@@ -872,13 +906,13 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
               color: pageSize === n ? '#fff' : '#555',
             }}
           >
-            {n === 0 ? '全部' : n}
+            {n === 0 ? t.allBtn : n}
           </button>
         ))}
         {pageSize !== 0 && totalPages > 1 && (
           <>
             <span style={{ fontSize: '20px', color: '#aaa', marginLeft: '8px' }}>
-              第 {safePage} / {totalPages} 页
+              {t.pageOf(safePage, totalPages)}
             </span>
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -900,12 +934,12 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
 
       {/* Entries */}
       {filtered.length === 0 ? (
-        <p style={{ color: '#aaa' }}>暂无日记</p>
+        <p style={{ color: '#aaa' }}>{t.noEntries}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {paged.map((entry) => {
             const d = new Date(entry.createdAt);
-            const label = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 星期${WEEKDAYS[d.getDay()]}`;
+            const label = t.dateLabel(d);
             const isEditing = editingId === entry.id;
             return (
               <div
@@ -923,7 +957,7 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
               >
                 <div style={{ fontSize: '12px', color: '#888', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {entry.mood && <span style={{ fontSize: '16px' }}>{entry.mood}</span>}
-                  {label} · {d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                  {label} · {d.toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit' })}
                 </div>
 
                 {isEditing ? (
@@ -946,7 +980,7 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                       autoFocus
                     />
                     <div style={{ marginTop: '6px', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <MoodPicker value={editMood} onChange={setEditMood} />
+                      <MoodPicker value={editMood} onChange={setEditMood} t={t} />
                       <button
                         onClick={async () => {
                           if (editContent.trim()) {
@@ -958,13 +992,13 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                         }}
                         style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#4CAF50', color: 'white', fontSize: '13px' }}
                       >
-                        保存 (Ctrl+Enter)
+                        {t.save}
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
                         style={{ ...btnBase, padding: '4px 12px', backgroundColor: '#999', color: 'white', fontSize: '13px' }}
                       >
-                        取消 (Esc)
+                        {t.cancelEsc}
                       </button>
                     </div>
                   </>
@@ -980,13 +1014,13 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
                       onClick={() => { setEditingId(entry.id); setEditContent(entry.content); setEditMood(entry.mood ?? null); }}
                       style={{ ...btnBase, padding: '3px 8px', backgroundColor: '#2196F3', color: 'white', fontSize: '12px' }}
                     >
-                      编辑
+                      {t.edit}
                     </button>
                     <button
                       onClick={() => setPendingDeleteId(entry.id)}
                       style={{ ...btnBase, padding: '3px 8px', backgroundColor: '#f44336', color: 'white', fontSize: '12px' }}
                     >
-                      删除
+                      {t.delete}
                     </button>
                   </div>
                 )}
@@ -998,13 +1032,14 @@ function AllEntriesView({ entries, onRefresh }: { entries: Entry[]; onRefresh: (
 
       {pendingDeleteId && (
         <ConfirmDialog
-          message="确认删除这篇日记？"
+          message={t.confirmDeleteMessage}
           onConfirm={async () => {
             await window.electronAPI.deleteEntry(pendingDeleteId);
             setPendingDeleteId(null);
             onRefresh();
           }}
           onCancel={() => setPendingDeleteId(null)}
+          t={t}
         />
       )}
     </div>
@@ -1019,6 +1054,14 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [lang, setLang] = useState<Lang>(() => detectLang());
+
+  const t = getT(lang);
+
+  function handleLangChange(l: Lang) {
+    setLang(l);
+    saveLang(l);
+  }
 
   const calendarActive = view === 'calendar' && selectedDate === null;
   const listActive = view === 'list';
@@ -1048,11 +1091,11 @@ function App() {
           boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
         }}
       >
-        <span style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.5px' }}>我的日记本</span>
+        <span style={{ fontSize: '18px', fontWeight: 'bold', letterSpacing: '0.5px' }}>{t.appTitle}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {/* Calendar icon */}
           <button
-            title="日历"
+            title={t.navCalendar}
             onClick={() => { setView('calendar'); setSelectedDate(null); }}
             disabled={calendarActive}
             style={{
@@ -1082,7 +1125,7 @@ function App() {
 
           {/* List icon */}
           <button
-            title="所有日记"
+            title={t.navAllEntries}
             onClick={() => { setView('list'); setSelectedDate(null); }}
             disabled={listActive}
             style={{
@@ -1115,7 +1158,7 @@ function App() {
           {/* Settings icon */}
           <button
             onClick={() => setSettingsOpen(true)}
-            title="设置"
+            title={t.navSettings}
             style={{
               background: 'rgba(255,255,255,0.15)',
               border: 'none',
@@ -1146,21 +1189,30 @@ function App() {
             allEntries={entries}
             onBack={() => setSelectedDate(null)}
             onRefresh={loadEntries}
+            t={t}
           />
         ) : view === 'list' ? (
-          <AllEntriesView entries={entries} onRefresh={loadEntries} />
+          <AllEntriesView entries={entries} onRefresh={loadEntries} t={t} />
         ) : (
           <CalendarView
             currentMonth={currentMonth}
             entries={entries}
             onMonthChange={setCurrentMonth}
             onDayClick={setSelectedDate}
+            t={t}
           />
         )}
       </div>
 
       {/* Settings right panel */}
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => setSettingsOpen(false)}
+          t={t}
+          lang={lang}
+          onLangChange={handleLangChange}
+        />
+      )}
     </div>
   );
 }
