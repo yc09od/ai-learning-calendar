@@ -5,6 +5,7 @@
   "scripts": {
     "android": "powershell -Command \"Push-Location android; .\\\\gradlew.bat app:installDebug -PreactNativeDevServerPort=8081; Pop-Location\"",
     "build:android": "powershell -Command \"Push-Location android; .\\\\gradlew.bat assembleRelease; Pop-Location\"",
+    "build:aab": "powershell -Command \"Push-Location android; .\\\\gradlew.bat bundleRelease; Pop-Location\"",
     "install:android": "powershell -Command \"Push-Location android; .\\\\gradlew.bat installRelease; Pop-Location\"",
     "start": "react-native start",
     "start:reset": "react-native start --reset-cache"
