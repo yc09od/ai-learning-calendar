@@ -7,6 +7,7 @@
     "metro": "pnpm --filter @diary/mobile start",
     "build:desktop": "pnpm --filter @diary/desktop build",
     "build:android": "pnpm --filter @diary/mobile build:android",
+    "build:aab": "pnpm --filter @diary/mobile build:aab",
     "install:android": "pnpm --filter @diary/mobile install:android"
   },
   "devDependencies": {
