@@ -50,6 +50,13 @@ pnpm install:android  # 打包 Release APK 并直接安装到设备
 
 > **Release 安装说明**：`install:android` 无需启动 Metro，JS bundle 已内嵌在 APK 中。
 > 手机需开启 USB 调试并通过 USB 连接电脑。
+> 签名证书命令。在andriod/app 下运行 keytool -genkeypair -v -keystore {keyname}.keystore -alias {keyname-alias} -keyalg RSA -keysize 2048 -validity 10000 -storepass {password} -keypass {password} -dname "{CN=Your Name, OU=Dev, O=Your Company, L=Beijing, ST=Beijing, C=CN}"
+
+更改gradle.properties config
+MYAPP_UPLOAD_STORE_FILE={keyname}.keystore
+MYAPP_UPLOAD_KEY_ALIAS={keyname-alias}
+MYAPP_UPLOAD_STORE_PASSWORD={password}
+MYAPP_UPLOAD_KEY_PASSWORD={password}
 
 ## 环境要求
 
